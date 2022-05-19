@@ -1,5 +1,5 @@
 #######################################################
-# This is a unofficial PyTorch implementation for 
+# This is an unofficial PyTorch implementation for 
 # https://bitbucket.org/dokhlab/neuraldock/src/master/
 #######################################################
 
