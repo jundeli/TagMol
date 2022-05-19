@@ -1,3 +1,8 @@
+#######################################################
+# This is a PyTorch implementation for deterministic
+# Rec2Lig regression model.
+#######################################################
+
 import os, time
 import re
 from tqdm import tqdm
