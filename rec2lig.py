@@ -180,42 +180,46 @@ def compute_dock_energy(neuraldock, model, data_loader):
     size = len(data_loader.dataset)
     return real_de/size, fake_de/size
 
-# train loop
-print('Start traning...')
-lowest_loss = np.inf
-for epoch in tqdm(range(start_epoch, max_epoch),  desc='total progress'):
-    model.train()
-    losses = []
-    for batch, (recs, atoms, bonds, bd, medusa) in enumerate(train_loader):
-        curr_log = f"epoch {epoch+1}\t"
+def main():
+    # train loop
+    print('Start traning...')
+    lowest_loss = np.inf
+    for epoch in tqdm(range(start_epoch, max_epoch),  desc='total progress'):
+        model.train()
+        losses = []
+        for batch, (recs, atoms, bonds, bd, medusa) in enumerate(train_loader):
+            curr_log = f"epoch {epoch+1}\t"
 
-        # Train the model.
-        optimizer.zero_grad()
-        atoms_logits, bonds_logits = model(recs)
-        loss = torch.nn.MSELoss(reduction='sum')(atoms_logits, atoms) + \
-               torch.nn.MSELoss(reduction='sum')(bonds_logits, bonds)
-        loss = loss / atoms.size(0)
-        
-        loss.backward()
-        losses.append(loss.item())
-        print(f"{epoch+1}:{batch}\t{loss.item():.4f}", end="\r")
-        optimizer.step()
+            # Train the model.
+            optimizer.zero_grad()
+            atoms_logits, bonds_logits = model(recs)
+            loss = torch.nn.MSELoss(reduction='sum')(atoms_logits, atoms) + \
+                torch.nn.MSELoss(reduction='sum')(bonds_logits, bonds)
+            loss = loss / atoms.size(0)
+            
+            loss.backward()
+            losses.append(loss.item())
+            print(f"{epoch+1}:{batch}\t{loss.item():.4f}", end="\r")
+            optimizer.step()
 
-    curr_log += f"loss:{np.mean(losses):.4f}\t"
-    print_and_save(curr_log, f"{log_fname}/log.txt")
+        curr_log += f"loss:{np.mean(losses):.4f}\t"
+        print_and_save(curr_log, f"{log_fname}/log.txt")
 
-    # # TODO: Varify atom labels before visualization.
-    # if visualization:
-    #     (atoms_hard, bonds_hard) = postprocess((atoms_logits, bonds_logits), 'hard_gumbel')
-    #     atoms_hard, bonds_hard = torch.max(atoms_hard, -1)[1], torch.max(bonds_hard, -1)[1]
-    #     mols = [matrices2mol(a.item(), b.item(), strict=True) for a, b in zip(atoms_hard, bonds_hard)]
+        # # TODO: Varify atom labels before visualization.
+        # if visualization:
+        #     (atoms_hard, bonds_hard) = postprocess((atoms_logits, bonds_logits), 'hard_gumbel')
+        #     atoms_hard, bonds_hard = torch.max(atoms_hard, -1)[1], torch.max(bonds_hard, -1)[1]
+        #     mols = [matrices2mol(a.item(), b.item(), strict=True) for a, b in zip(atoms_hard, bonds_hard)]
 
-    if (epoch+1) % save_step == 0:
-        if np.mean(losses) < lowest_loss:
-            lowest_loss = np.mean(losses)
-        torch.save({
-                    'epoch': epoch+1,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'loss': loss
-                    }, f"{models_dir}/rec2lig-{epoch+1}.pth")
+        if (epoch+1) % save_step == 0:
+            if np.mean(losses) < lowest_loss:
+                lowest_loss = np.mean(losses)
+            torch.save({
+                        'epoch': epoch+1,
+                        'model_state_dict': model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'loss': loss
+                        }, f"{models_dir}/rec2lig-{epoch+1}.pth")
+
+if __name__ == '__main__':
+    main()

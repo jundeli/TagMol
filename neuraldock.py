@@ -139,9 +139,10 @@ test_loader = torch.utils.data.DataLoader(list(zip(receptor, atoms, bonds, bd)),
                         batch_size=batch_size, shuffle=True, pin_memory=True, drop_last=True,
                         num_workers=num_workers)
                         
-checkpoint = torch.load(f"{models_dir}/neuraldock-2000.pth")
-model.load_state_dict(checkpoint['model_state_dict'])
-epoch_start = checkpoint['epoch']
+# checkpoint = torch.load(f"{models_dir}/neuraldock-2000.pth")
+# model.load_state_dict(checkpoint['model_state_dict'])
+# epoch_start = checkpoint['epoch']
+epoch_start = 0
 
 # train loop
 print('Start traning...')
