@@ -127,7 +127,7 @@ class Receptor2Ligand(nn.Module):
 
         ### TODO: check whether to move bonds to 2nd dim.
         bonds_logits = self.bonds_layer(out).view(-1, ligand_size, ligand_size, self.num_bonds)
-        bonds_logits = (bonds_logits + bonds_logits.permute(0, 2, 1, 3)) / 2
+        bonds_logits = (bonds_logits + bonds_logits.permute(0, 2, 1, 3)) / 2.0
         bonds_logits = nn.Softmax(dim=-1)(bonds_logits)
 
         return atoms_logits, bonds_logits
@@ -168,7 +168,7 @@ test_loader = torch.utils.data.DataLoader(list(zip(receptor, atoms, bonds, bd)),
 # Load NeuralDock for validation.
 # neuraldock = NeuralDock()
 
-# TODO: Get pre-trained the NuralDock model.
+# TODO: Get the trained NuralDock model.
 def compute_dock_energy(neuraldock, model, data_loader):
     neuraldock.eval()
     real_de, fake_de = 0, 0

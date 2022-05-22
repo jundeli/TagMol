@@ -138,39 +138,43 @@ bd = torch.tensor(bd).float()
 test_loader = torch.utils.data.DataLoader(list(zip(receptor, atoms, bonds, bd)),
                         batch_size=batch_size, shuffle=True, pin_memory=True, drop_last=True,
                         num_workers=num_workers)
-                        
-# checkpoint = torch.load(f"{models_dir}/neuraldock-2000.pth")
-# model.load_state_dict(checkpoint['model_state_dict'])
-# epoch_start = checkpoint['epoch']
-epoch_start = 0
 
-# train loop
-print('Start traning...')
-for epoch in tqdm(range(epoch_start, max_epoch),  desc='total progress'):
-    model.train()
-    losses = []
-    for batch, (recs, atoms, bonds, bd, stats) in enumerate(train_loader):
-        curr_log = f"epoch {epoch}\t"
-        print()
+def main():
+    # checkpoint = torch.load(f"{models_dir}/neuraldock-2000.pth")
+    # model.load_state_dict(checkpoint['model_state_dict'])
+    # epoch_start = checkpoint['epoch']
+    epoch_start = 0
 
-        # Train the model.
-        optimizer.zero_grad()
-        bd_pred, stats_logits = model(recs, atoms, bonds)
-        print(bd_pred.shape, stats_logits.shape)
-        loss = torch.nn.MSELoss(reduction='mean')(bd_pred, bd) + \
-               torch.nn.MSELoss(reduction='mean')(stats_logits, stats)
-        loss.backward()
-        losses.append(loss.item())
-        print(f"{epoch}:{batch}\t{loss.item():.4f}", end="\r")
-        optimizer.step()
+    # train loop
+    print('Start traning...')
+    for epoch in tqdm(range(epoch_start, max_epoch),  desc='total progress'):
+        model.train()
+        losses = []
+        for batch, (recs, atoms, bonds, bd, stats) in enumerate(train_loader):
+            curr_log = f"epoch {epoch}\t"
+            print()
 
-    curr_log += f"loss:{np.mean(losses):.4f}\t"
-    print_and_save(curr_log, "pdb-cla.txt")
+            # Train the model.
+            optimizer.zero_grad()
+            bd_pred, stats_logits = model(recs, atoms, bonds)
+            print(bd_pred.shape, stats_logits.shape)
+            loss = torch.nn.MSELoss(reduction='mean')(bd_pred, bd) + \
+                torch.nn.MSELoss(reduction='mean')(stats_logits, stats)
+            loss.backward()
+            losses.append(loss.item())
+            print(f"{epoch}:{batch}\t{loss.item():.4f}", end="\r")
+            optimizer.step()
 
-    if (epoch+1) % save_step == 0 or np.mean(losses) < 650:
-        torch.save({
-                    'epoch': epoch+1,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'loss': loss
-                    }, f"{models_dir}/neuraldock-{epoch+1}.pth")
+        curr_log += f"loss:{np.mean(losses):.4f}\t"
+        print_and_save(curr_log, "pdb-cla.txt")
+
+        if (epoch+1) % save_step == 0 or np.mean(losses) < 650:
+            torch.save({
+                        'epoch': epoch+1,
+                        'model_state_dict': model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'loss': loss
+                        }, f"{models_dir}/neuraldock-{epoch+1}.pth")
+
+if __name__ == '__main__':
+    main()

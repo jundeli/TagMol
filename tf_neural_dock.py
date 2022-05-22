@@ -36,32 +36,23 @@ def createProteinImage(PDBID, imageSize=10, resolution=2):
         # The 77th character is the atom type, while the 30th through 53 characters are the 3D coordinates in angstroms
         protein = [(i[77], np.array([float(k) for k in (i[30:38],i[38:46], i[46:54])])) \
                         for i in f.read().split('\n') if i[:4] == 'ATOM']
-    
     # Use rdkit to load the ligand as well
     ligand = MolFromMol2File('../data/dataset/{}.lig.mol2'.format(PDBID), sanitize=False)
-    
     # rdkit is unable to process some percentage of structures
     if ligand is None:
         return None
-    
     # remove explicit hydrogens
     ligand = RemoveHs(ligand, sanitize=False)
-    
     # Get the centroid of the ligand
     centroid = np.mean(ligand.GetConformer().GetPositions(), axis=0)
-    
     # Calculate the lower bound on atom coordinates that will end up in the protein image
     lower = centroid - np.repeat(imageSize // 2 * resolution, 3)
-
     # Translate the protein so that the lower bound corresponds to grid index [0,0,0]
     protein = [(i[0], i[-1]-lower) for i in protein]
-
     # Convert 3D coordinates to grid indices
     protein = [(i, (j // resolution).astype(np.int8)) for (i,j) in protein]
-    
     # Filter atoms which are within the imageSize x imageSize x imageSize box
     protein = [i for i in protein if np.all(i[1] >= 0) and np.all(i[1] < imageSize)]
-
     protImage = np.zeros((imageSize, imageSize, imageSize, len(atomDict)+1), dtype=bool)
     protImage[:, :, :, 0] = True
 
@@ -92,21 +83,16 @@ def createProteinImage(PDBID, imageSize=10, resolution=2):
         
     # Convert bond orders to categories
     bonds = bondMap(adj)
-    
     # One-hot encode adjacency matrix
     bonds = np.array([[[j == t for t in range(len(bondType))] for j in i] for i in bonds])
-    
     # Process the atom types
     atomList = list(ligAtomMap(ligand.GetAtoms()))
-    
     # Remove atoms in the same order they were removed from the adjacency matrix
     for i in toRemove:
         del atomList[i]
-        
     # Standardize to 36 atoms
     atoms = np.zeros(36)
     atoms[:len(atomList)] = atomList
-    
     # One-hot encode atom types
     atoms = np.array([[i == t for t in range(len(ligAtom))] for i in atoms])
     return protImage, (bonds, atoms)
