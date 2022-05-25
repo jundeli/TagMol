@@ -1,6 +1,6 @@
 #######################################################
 # This is a PyTorch implementation for deterministic
-# Rec2Lig regression model.
+# LigNet regression model.
 #######################################################
 
 import os, time
@@ -79,7 +79,7 @@ class BasicBlock(nn.Module):
         return h
 
 class Receptor2Ligand(nn.Module):
-    """Network for mapping receptors to ligands."""
+    """Deterministic network for mapping receptors to ligands."""
     def __init__(self, conv_dims, in_channels=8, out_channels=3, activation=nn.ReLU()):
         super(Receptor2Ligand, self).__init__()
         self.num_atoms = len(ligAtom)
