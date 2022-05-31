@@ -121,6 +121,7 @@ class LV_LigNet(nn.Module):
         self.num_atoms = len(ligAtom)
         self.num_bonds = len(bondType)
         self.latent_dim = latent_dim
+        self.rec_predictor = torch.nn.DataParallel(RecPredictor(8, out_channels=3, hidden_channels=5))
 
         layers = []
         for c0, c1 in zip([3000+self.latent_dim]+conv_dims[:-1], conv_dims):
@@ -142,31 +143,32 @@ class LV_LigNet(nn.Module):
                           nn.Dropout(p=0.5)
                           )
 
-    def reparameterize(self, mu, logvar):
+    def gmm_sampling(self, mu, logvar):
         std = torch.exp(0.5 * logvar)
-        eps = torch.randn(std.shape)
-        return eps * std + mu
+        samples = mu + std * torch.randn(num_samples, latent_dim) # shape = (num_samples, latent_dim)
+        samples = samples.unsqueeze(0).repeat(batch_size, 1, 1) # shape = (N, num_samples, latent_dim)
+        return samples
 
     def forward(self, rec_enc, mu, log_var):
 
         # Generate atoms and bonds.
-        z = self.reparameterize(mu, log_var)
-        h = torch.cat((rec_enc, z), 1)
+        z = self.gmm_sampling(mu, log_var)
+        rec_enc = rec_enc.unsqueeze(1).repeat(1, num_samples, 1) # shape = (N, num_samples, 3000)
+        h = torch.cat((rec_enc, z), -1) # shape = (N, num_samples, 3000+latent_dim)
         out = self.layers(h)
-        atoms_logits = self.atom_layer(out).view(-1, ligand_size, self.num_atoms)
+        atoms_logits = self.atom_layer(out).view(out.size(0), -1, ligand_size, self.num_atoms)
         atoms_logits = nn.Softmax(dim=-1)(atoms_logits)
 
         ### TODO: check whether to move bonds to 2nd dim.
-        bonds_logits = self.bonds_layer(out).view(-1, ligand_size, ligand_size, self.num_bonds)
-        bonds_logits = (bonds_logits + bonds_logits.permute(0, 2, 1, 3)) / 2.0
+        bonds_logits = self.bonds_layer(out).view(out.size(0), -1, ligand_size, ligand_size, self.num_bonds)
+        bonds_logits = (bonds_logits + bonds_logits.permute(0, 1, 3, 2, 4)) / 2.0
         bonds_logits = nn.Softmax(dim=-1)(bonds_logits)
 
         return atoms_logits, bonds_logits
 
 # Make the optimizer.
-rec_predictor = torch.nn.DataParallel(RecPredictor(8, out_channels=3, hidden_channels=5))
-lv_lignet = torch.nn.DataParallel(LV_LigNet(conv_dims))
-optimizer = torch.optim.Adam(list(rec_predictor.parameters())+list(lv_lignet.parameters()), lr, (beta1, beta2))
+model = torch.nn.DataParallel(LV_LigNet(conv_dims))
+optimizer = torch.optim.Adam(model.parameters()), lr, (beta1, beta2)
 
 # Make the dataloaders.
 (trainingData, medusa, training) = pickle.load(open('data/tutorialData.pkl', 'rb'))
@@ -194,23 +196,22 @@ def main():
     # train loop
     print('Start traning...')
     for epoch in tqdm(range(start_epoch, max_epoch),  desc='total progress'):
-        rec_predictor.train()
-        lv_lignet.train()
+        model.train()
         losses = []
         for batch, (recs, atoms, bonds, bd, medusa) in enumerate(train_loader):
-            batch_loss = 0
             curr_log = f"epoch {epoch+1}\t"
 
             # Train the model.
             optimizer.zero_grad()
-            lig_pred, mu, logvar = rec_predictor(recs)
-            for _ in range(num_samples):
-                atoms_logits, bonds_logits = lv_lignet(lig_pred, mu, logvar)
-                loss = torch.nn.MSELoss(reduction='sum')(atoms_logits, atoms) + \
-                            torch.nn.MSELoss(reduction='sum')(bonds_logits, bonds)
-                batch_loss += loss
+            lig_pred, mu, logvar = model.rec_predictor(recs)
+            atoms_logits, bonds_logits = model(lig_pred, mu, logvar)
+            
+            atoms = atoms.unsqueeze(1).repeat(1, num_samples, 1, 1)
+            bonds = bonds.unsqueeze(1).repeat(1, num_samples, 1, 1, 1)
 
-            batch_loss = batch_loss / num_samples / lig_pred.size(0)
+            atom_loss = torch.mean(torch.sum(torch.square(atoms_logits-atoms), (-2, -1)))
+            bond_loss = torch.mean(torch.sum(torch.square(bonds_logits-bonds), (-3, -2, -1)))
+            batch_loss = atom_loss + bond_loss
             
             batch_loss.backward()
             losses.append(batch_loss.item())
