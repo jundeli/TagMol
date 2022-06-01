@@ -15,11 +15,11 @@ from utils import *
 #############################
 # Hyperparameters
 #############################
-lr             = 1e-5
+lr             = 1e-6
 beta1          = 0.0
 beta2          = 0.9
 batch_size     = 16
-max_epoch      = 30000
+max_epoch      = 100000
 num_workers    = 2
 ligand_size    = 36
 save_step      = 2000
@@ -28,6 +28,8 @@ name = "model/neuraldock"
 log_fname = f"{name}"
 viz_dir = f"{name}"
 models_dir = f"{name}/saved_models"
+
+device = torch.device("cuda:0")
 
 if not os.path.exists(log_fname):
     os.makedirs(log_fname)
@@ -39,7 +41,7 @@ if not os.path.exists(models_dir):
 class RecEncoder(nn.Module):
     """Protein receptor encoding network."""
     def __init__(self):
-        super(recEncoder, self).__init__()
+        super(RecEncoder, self).__init__()
         self.block1 = nn.Sequential(
             nn.Dropout(p=0.2),
             nn.utils.spectral_norm(nn.Linear(8000, 1024)),
@@ -61,7 +63,7 @@ class RecEncoder(nn.Module):
 class LigEncoder(nn.Module):
     """Ligand encoding network."""
     def __init__(self):
-        super(ligEncoder, self).__init__()
+        super(LigEncoder, self).__init__()
         self.block1 = nn.Sequential(
             nn.Dropout(p=0.2),
             nn.utils.spectral_norm(nn.Linear(6732, 1024)),
@@ -114,7 +116,7 @@ class NeuralDock(nn.Module):
         return bd, stat
 
 # Make the optimizer.
-model = torch.nn.DataParallel(NeuralDock()).cuda()
+model = torch.nn.DataParallel(NeuralDock()).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr)
 
 # Make the dataloaders.
@@ -140,7 +142,7 @@ test_loader = torch.utils.data.DataLoader(list(zip(receptor, atoms, bonds, bd)),
                         num_workers=num_workers)
 
 def main():
-    epoch_start = 16000
+    epoch_start = 32000
     checkpoint = torch.load(f"{models_dir}/neuraldock-{epoch_start}.pth")
     model.load_state_dict(checkpoint['model_state_dict'])
 

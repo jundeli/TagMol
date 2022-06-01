@@ -32,8 +32,8 @@ num_samples    = 1024
 start_epoch    = 0
 
 name = "model/lv-lignet"
-log_fname = f"{name}/logs"
-viz_dir = f"{name}/viz"
+log_fname = f"{name}"
+viz_dir = f"{name}"
 models_dir = f"{name}/saved_models"
 
 device = torch.device("cuda:0")
@@ -223,6 +223,14 @@ def main():
 
         curr_log += f"loss:{np.mean(losses):.4f}\t"
         print_and_save(curr_log, f"{log_fname}/log.txt")
+
+        if (epoch+1) % save_step == 0:
+            torch.save({
+                        'epoch': epoch+1,
+                        'model_state_dict': model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'loss': np.mean(losses)
+                        }, f"{models_dir}/lv-lignet-{epoch+1}.pth")
 
 if __name__ == '__main__':
     main()
