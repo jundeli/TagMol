@@ -24,17 +24,19 @@ max_epoch      = 400
 num_workers    = 2
 ligand_size    = 36
 gen_dim        = 64
-conv_dims      = [4096, 2048, 1024]
+conv_dims      = [2048, 4096, 2048, 1024]
 visualization  = False
 save_step      = 100
-latent_dim     = 2
-num_samples    = 10
+latent_dim     = 8
+num_samples    = 1024
 start_epoch    = 0
 
 name = "model/lv-lignet"
 log_fname = f"{name}/logs"
 viz_dir = f"{name}/viz"
 models_dir = f"{name}/saved_models"
+
+device = torch.device("cuda:0")
 
 if not os.path.exists(log_fname):
     os.makedirs(log_fname)
@@ -145,8 +147,9 @@ class LV_LigNet(nn.Module):
 
     def gmm_sampling(self, mu, logvar):
         std = torch.exp(0.5 * logvar)
-        samples = mu + std * torch.randn(num_samples, latent_dim) # shape = (num_samples, latent_dim)
-        samples = samples.unsqueeze(0).repeat(batch_size, 1, 1) # shape = (N, num_samples, latent_dim)
+        mu, std = mu.unsqueeze(1), std.unsqueeze(1)
+        samples = mu + std * torch.randn(num_samples, self.latent_dim, device=device) # shape = (N, num_samples, latent_dim)
+        # samples = samples.unsqueeze(0).repeat(batch_size, 1, 1) # shape = (N, num_samples, latent_dim)
         return samples
 
     def forward(self, rec_enc, mu, log_var):
@@ -167,8 +170,8 @@ class LV_LigNet(nn.Module):
         return atoms_logits, bonds_logits
 
 # Make the optimizer.
-model = torch.nn.DataParallel(LV_LigNet(conv_dims))
-optimizer = torch.optim.Adam(model.parameters()), lr, (beta1, beta2)
+model = LV_LigNet(conv_dims).to(device)
+optimizer = torch.optim.Adam(model.parameters(), lr, (beta1, beta2))
 
 # Make the dataloaders.
 (trainingData, medusa, training) = pickle.load(open('data/tutorialData.pkl', 'rb'))
@@ -206,8 +209,8 @@ def main():
             lig_pred, mu, logvar = model.rec_predictor(recs)
             atoms_logits, bonds_logits = model(lig_pred, mu, logvar)
             
-            atoms = atoms.unsqueeze(1).repeat(1, num_samples, 1, 1)
-            bonds = bonds.unsqueeze(1).repeat(1, num_samples, 1, 1, 1)
+            atoms = atoms.unsqueeze(1).repeat(1, num_samples, 1, 1).cuda()
+            bonds = bonds.unsqueeze(1).repeat(1, num_samples, 1, 1, 1).cuda()
 
             atom_loss = torch.mean(torch.sum(torch.square(atoms_logits-atoms), (-2, -1)))
             bond_loss = torch.mean(torch.sum(torch.square(bonds_logits-bonds), (-3, -2, -1)))
