@@ -15,7 +15,7 @@ from utils import *
 #############################
 # Hyperparameters
 #############################
-lr             = 1e-6
+lr             = 1e-5
 beta1          = 0.0
 beta2          = 0.9
 batch_size     = 16

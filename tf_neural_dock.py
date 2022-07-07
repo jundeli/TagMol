@@ -226,7 +226,7 @@ N = 36
 
 def energy():
     # Protein encoder
-    start = Input((10,10,10,8))
+    start = Input((8,10,10,10))
     pooled = Flatten()(start)
     for i in [1024]:
         for j in range(10):
@@ -313,7 +313,7 @@ def print_and_save(s, fname):
 
 def main():
     import pickle
-    EPOCH = 10000
+    EPOCH = 100000
     with open('data/tutorialData.pkl', 'rb') as f:
         (trainingData, medusa, training) = pickle.load(f)
     #trainingData = {i: (X, Y, Z, bd) for (i, (X, Y, Z, bd)) in trainingData.items()}
@@ -361,12 +361,12 @@ def main():
 
         print('Time for epoch {} is {} sec'.format(epoch+1, time.time()-start))
         curr_log += f"loss:{np.mean(c):.4f}\t bdloss:{np.mean(cbd):.4f}"
-        print_and_save(curr_log, "pdb-cla.txt")
+        print_and_save(curr_log, "tf-pdb-cla.txt")
         sys.stdout.flush()
         
-        if (epoch+1) % 2000 == 0:
+        if (epoch+1) % 5000 == 0:
             print(f"Exporting trained model at epoch {epoch+1}...")
-            model.save_weights(f'../data/finalNoTrans/model-epoch{epoch+1}')
+            model.save_weights(f'data/finalNoTrans/model-epoch{epoch+1}')
     print("Done training!")
 
 if __name__ == "__main__":

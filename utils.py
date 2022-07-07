@@ -154,36 +154,36 @@ class ligEncoder(nn.Module):
         
         return h
 
-class NeuralDock(nn.Module):
-    """Network for predicting docking energy."""
-    def __init__(self):
-        super(NeuralDock, self).__init__()
-        self.rec_enc = recEncoder()
-        self.lig_enc = ligEncoder()
-        self.block1 = nn.Sequential(
-            nn.Dropout(p=0.2),
-            nn.utils.spectral_norm(nn.Linear(2048, 1024)),
-            nn.LeakyReLU())
-        self.block2 = nn.Sequential(
-            nn.Dropout(p=0.2),
-            nn.utils.spectral_norm(nn.Linear(1024, 1024)),
-            nn.LeakyReLU())
-        self.energy_layer = nn.utils.spectral_norm(nn.Linear(1024, 1))
-        self.stat_layer = nn.utils.spectral_norm(nn.Linear(1024, 13*7))
+# class NeuralDock(nn.Module):
+#     """Network for predicting docking energy."""
+#     def __init__(self):
+#         super(NeuralDock, self).__init__()
+#         self.rec_enc = recEncoder()
+#         self.lig_enc = ligEncoder()
+#         self.block1 = nn.Sequential(
+#             nn.Dropout(p=0.2),
+#             nn.utils.spectral_norm(nn.Linear(2048, 1024)),
+#             nn.LeakyReLU())
+#         self.block2 = nn.Sequential(
+#             nn.Dropout(p=0.2),
+#             nn.utils.spectral_norm(nn.Linear(1024, 1024)),
+#             nn.LeakyReLU())
+#         self.energy_layer = nn.utils.spectral_norm(nn.Linear(1024, 1))
+#         self.stat_layer = nn.utils.spectral_norm(nn.Linear(1024, 13*7))
 
-    def forward(self, recs, atoms, bonds):
-        enc_recs = self.rec_enc(recs)
-        enc_ligs = self.lig_enc(atoms, bonds)
-        h = torch.cat((enc_recs, enc_ligs), -1)
-        h = self.block1(h)
-        for _ in range(9):
-            h += self.block2(h)
+#     def forward(self, recs, atoms, bonds):
+#         enc_recs = self.rec_enc(recs)
+#         enc_ligs = self.lig_enc(atoms, bonds)
+#         h = torch.cat((enc_recs, enc_ligs), -1)
+#         h = self.block1(h)
+#         for _ in range(9):
+#             h += self.block2(h)
 
-        # Output binding energy and 13x7 summary statistics.
-        bd = self.energy_layer(h)
-        stat = self.stat_layer(h)
+#         # Output binding energy and 13x7 summary statistics.
+#         bd = self.energy_layer(h)
+#         stat = self.stat_layer(h)
 
-        return bd, stat
+#         return bd, stat
 
 # # Get pre-trained the NuralDock model.
 # def compute_dock_energy(neuraldock, model, data_loader):
