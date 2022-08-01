@@ -127,11 +127,11 @@ class PDBbindPLDataset(Dataset):
 # Driver code for testing.
 if __name__ == '__main__':
     # import warnings
-    # warnings.filterwarnings("ignore")
+    # warnings.filterwarnings("ignore") # Ignore warning from Chem
 
     train_dataset = PDBbindPLDataset(root_dir='data/pdbbind/refined-set',
                                         n_points=5000, 
-                                        lig_size=36,
+                                        lig_size=32,
                                         train=True,
                                         transform=transforms.Compose([
                                             Normalize(),
