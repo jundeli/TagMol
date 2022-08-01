@@ -112,9 +112,41 @@ class PDBbindPLDataset(Dataset):
         bonds = np.vectorize(self.bond_encoder.get)(bonds)
         bonds = np.eye(len(self.bond_encoder))[bonds]
 
-        return protein, atoms, bonds
+        sample = {'protein': protein, 'ligand': (atoms, bonds)}
+
+        if self.transform:
+            sample = self.transform(sample)
+
+        return sample
 
     def _read_pids(self):
         with open(os.path.join(self.root_dir, f'index/{self.split}.txt'), 'r') as f:
             pids = f.read().splitlines()
         return pids
+
+# Driver code for testing.
+if __name__ == '__main__':
+    # import warnings
+    # warnings.filterwarnings("ignore")
+
+    train_dataset = PDBbindPLDataset(root_dir='data/pdbbind/refined-set',
+                                        n_points=5000, 
+                                        lig_size=36,
+                                        train=True,
+                                        transform=transforms.Compose([
+                                            Normalize(),
+                                            RandomRotateJitter(),
+                                            ToTensor()
+                                        ]))
+
+    train_dataloader = DataLoader(train_dataset, batch_size=16,
+                            shuffle=True, num_workers=4)
+
+    for i_batch, sample_batched in enumerate(train_dataloader):
+        print(i_batch, sample_batched['protein'].size(),
+            sample_batched['ligand'][0].size(),
+            sample_batched['ligand'][1].size())
+        print(sample_batched['protein'][0])
+        print(sample_batched['ligand'][0][0])
+        print(sample_batched['ligand'][1][0])
+        break
