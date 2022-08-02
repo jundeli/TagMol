@@ -1,0 +1,18 @@
+2022-08-01 16:20:00,617 - Model - INFO - PARAMETER ...
+2022-08-01 16:20:00,617 - Model - INFO - Namespace(batch_size=16, decay_rate=0.0001, epoch=251, gpu='-1', learning_rate=0.001, log_dir=None, lr_decay=0.5, model='pointnet_part_seg', normal=False, npoint=2048, optimizer='Adam', step_size=20)
+2022-08-01 16:20:00,729 - Model - INFO - The number of training data is: 13998
+2022-08-01 16:20:00,729 - Model - INFO - The number of test data is: 2874
+2022-08-01 16:20:32,207 - Model - INFO - PARAMETER ...
+2022-08-01 16:20:32,208 - Model - INFO - Namespace(batch_size=16, decay_rate=0.0001, epoch=251, gpu='-1', learning_rate=0.001, log_dir=None, lr_decay=0.5, model='pointnet_part_seg', normal=False, npoint=2048, optimizer='Adam', step_size=20)
+2022-08-01 16:20:32,277 - Model - INFO - The number of training data is: 13998
+2022-08-01 16:20:32,277 - Model - INFO - The number of test data is: 2874
+2022-08-01 16:20:32,306 - Model - INFO - No existing model, starting training from scratch...
+2022-08-01 16:20:32,373 - Model - INFO - Epoch 1 (1/251):
+2022-08-01 16:20:32,373 - Model - INFO - Learning rate:0.001000
+2022-08-01 16:20:32,736 - Model - INFO - PARAMETER ...
+2022-08-01 16:20:32,736 - Model - INFO - Namespace(batch_size=16, decay_rate=0.0001, epoch=251, gpu='-1', learning_rate=0.001, log_dir=None, lr_decay=0.5, model='pointnet_part_seg', normal=False, npoint=2048, optimizer='Adam', step_size=20)
+2022-08-01 16:20:32,831 - Model - INFO - The number of training data is: 13998
+2022-08-01 16:20:32,831 - Model - INFO - The number of test data is: 2874
+2022-08-01 16:20:32,860 - Model - INFO - No existing model, starting training from scratch...
+2022-08-01 16:20:32,930 - Model - INFO - Epoch 1 (1/251):
+2022-08-01 16:20:32,930 - Model - INFO - Learning rate:0.001000

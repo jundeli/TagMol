@@ -1,0 +1,4 @@
+2022-08-01 16:15:35,561 - Model - INFO - PARAMETER ...
+2022-08-01 16:15:35,561 - Model - INFO - Namespace(batch_size=16, decay_rate=0.0001, epoch=251, gpu='0', learning_rate=0.001, log_dir=None, lr_decay=0.5, model='pointnet_part_seg', normal=False, npoint=2048, optimizer='Adam', step_size=20)
+2022-08-01 16:15:35,632 - Model - INFO - The number of training data is: 13998
+2022-08-01 16:15:35,633 - Model - INFO - The number of test data is: 2874
