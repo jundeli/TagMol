@@ -1,0 +1,98 @@
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.autograd import Variable
+
+
+class STN(nn.Module):
+    """Spatial transformer network for alignment"""
+
+    def __init__(self, k):
+        super(STN, self).__init__()
+        self.conv1 = torch.nn.Conv1d(k, 64, 1)
+        self.conv2 = torch.nn.Conv1d(64, 128, 1)
+        self.conv3 = torch.nn.Conv1d(128, 1024, 1)
+        self.fc1 = nn.Linear(1024, 512)
+        self.fc2 = nn.Linear(512, 256)
+        self.fc3 = nn.Linear(256, k * k)
+        self.relu = nn.ReLU()
+
+        self.bn1 = nn.BatchNorm1d(64)
+        self.bn2 = nn.BatchNorm1d(128)
+        self.bn3 = nn.BatchNorm1d(1024)
+        self.bn4 = nn.BatchNorm1d(512)
+        self.bn5 = nn.BatchNorm1d(256)
+
+        self.k = k
+
+    def forward(self, x):
+        batchsize = x.size()[0]
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = F.relu(self.bn2(self.conv2(x)))
+        x = F.relu(self.bn3(self.conv3(x)))
+        x = torch.max(x, 2, keepdim=True)[0]
+        x = x.view(-1, 1024)
+
+        x = F.relu(self.bn4(self.fc1(x)))
+        x = F.relu(self.bn5(self.fc2(x)))
+        x = self.fc3(x)
+
+        identity = Variable(torch.from_numpy(np.eye(self.k).flatten().astype(np.float32))).view(1, self.k * self.k).repeat(
+            batchsize, 1)
+        if x.is_cuda:
+            identity = identity.cuda()
+        x = x + identity
+        x = x.view(-1, self.k, self.k)
+        return x
+
+
+class PointNetEncoder(nn.Module):
+    """PointNet Encoder Network for protein embedding."""
+
+    def __init__(self, x_dim, channel=4, feature_transform=False):
+        super(PointNetEncoder, self).__init__()
+        self.stn = STN(k=3)
+        self.x_dim = x_dim
+        self.channel = channel
+        self.feature_transform = feature_transform
+
+        self.conv1 = torch.nn.Conv1d(self.channel, 64, 1)
+        self.conv2 = torch.nn.Conv1d(64, 128, 1)
+        self.conv3 = torch.nn.Conv1d(128, self.x_dim, 1)
+        self.bn1 = nn.BatchNorm1d(64)
+        self.bn2 = nn.BatchNorm1d(128)
+        self.bn3 = nn.BatchNorm1d(self.x_dim)
+        
+        if self.feature_transform:
+            self.fstn = STN(k=64)
+
+    def forward(self, x):
+        B, D, N = x.size()
+        trans = self.stn(x[:,:3,:]) # k=3 only
+        x = x.transpose(2, 1)
+        if D > 3:
+            feature = x[:, :, 3:]
+            x = x[:, :, :3]
+        x = torch.bmm(x, trans) # shape=(B, N, 3)
+
+        if D > 3:
+            x = torch.cat([x, feature], dim=2)
+        x = x.transpose(2, 1) # shape=(B, D, N)
+        x = F.relu(self.bn1(self.conv1(x))) # shape=(B, 64, N)
+
+        if self.feature_transform:
+            trans_feat = self.fstn(x)
+            x = x.transpose(2, 1)
+            x = torch.bmm(x, trans_feat)
+            x = x.transpose(2, 1)
+        else:
+            trans_feat = None
+        
+        x = F.relu(self.bn2(self.conv2(x))) # shape=(B, 128, N)
+        x = self.bn3(self.conv3(x)) # shape=(B, x_dim, N)
+        # Aggregate point features by max pooling.
+        x = torch.max(x, 2, keepdim=True)[0] # shape=(B, x_dim)
+        x = x.view(-1, self.x_dim)
+        
+        return x, trans, trans_feat
