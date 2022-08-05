@@ -204,3 +204,115 @@ class GATLayer(nn.Module):
 
         return node_feats
 
+
+class Discriminator(nn.Module):
+    """Discriminator with GATLayer for evaluating EM distance btw real and fake ligands."""
+
+    def __init__(self, c_in, c_out, c_hidden=None, n_relations=5, n_layers=3):
+        """
+        Args:
+            c_in - Dimension of input features
+            c_out - Dimension of output features
+            c_hidden - Dimension of hidden features
+            n_relations - Number of bond relations between atoms
+            n_layers - Number of GAT graph layers
+        """
+        super(Discriminator, self).__init__()
+        c_hidden = c_hidden if c_hidden else c_out
+
+        layers = []
+        in_channels, out_channels = c_in, c_hidden
+        for _ in range(n_layers-1):
+            layers += [
+                GATLayer(in_channels, out_channels, n_relations),
+                nn.LeakyReLU(0.2, inplace=True),
+                nn.Dropout(0.2)
+            ]
+            in_channels = c_hidden
+
+        layers.append(GATLayer(in_channels, c_out, n_relations))
+        self.layers = nn.ModuleList(layers)
+
+        self.validity_layer = nn.Sequential(
+                                    nn.Linear(2*c_out, c_out),
+                                    nn.LeakyReLU(0.2, inplace=True),
+                                    nn.Dropout(0.2),
+                                    nn.Linear(c_out, 1)
+                                )
+
+    def forward(self, x, adj):
+        """
+        Args:
+            x - Input features of one-hot encoded atom vector
+            adj - Ligand structure features of one-hot encoded bond adjacency matrix
+        """
+        for l in self.layers:
+            if isinstance(l, GATLayer):
+                x= l(x, adj)
+            else:
+                x = l(x)
+
+        # Aggregate mean and max features across all nodes.
+        h = torch.cat((torch.mean(x, 1), torch.max(x, 1)[0]), 1)
+        x = self.validity_layer(h)
+
+        return x
+
+
+class EnergyModel(nn.Module):
+    """Energy-based network for measuring relative binding affinity btw protein and ligand."""
+
+    def __init__(self, x_dim, c_in, c_out, c_hidden=None, n_relations=5, n_layers=3):
+        """
+        Args:
+            c_in - Dimension of input features
+            c_out - Dimension of output features
+            c_hidden - Dimension of hidden features
+            n_relations - Number of bond relations between atoms
+            n_layers - Number of GAT graph layers
+        """
+        super(EnergyModel, self).__init__()
+        c_hidden = c_hidden if c_hidden else c_out
+
+        layers = []
+        in_channels, out_channels = c_in, c_hidden
+        for _ in range(n_layers-1):
+            layers += [
+                GATLayer(in_channels, out_channels, n_relations),
+                nn.LeakyReLU(0.2, inplace=True),
+                nn.Dropout(0.2)
+            ]
+            in_channels = c_hidden
+
+        layers.append(GATLayer(in_channels, c_out, n_relations))
+        self.layers = nn.ModuleList(layers)
+
+        self.energy_layer = nn.Sequential(
+                                    nn.Linear(2*c_out+x_dim, 256),
+                                    nn.LeakyReLU(0.2, inplace=True),
+                                    nn.Linear(256, 32),
+                                    nn.LeakyReLU(0.2, inplace=True),
+                                    nn.Linear(32, 1)
+                                )
+
+    def forward(self, x, y_atoms, y_bonds):
+        """
+        Args:
+            x - Protein features extracted from PointNetEncoder
+            y_atoms - Input features of one-hot encoded atom vector
+            y_bonds - Ligand structure features of one-hot encoded bond adjacency matrix
+        """
+        for l in self.layers:
+            if isinstance(l, GATLayer):
+                y_atoms= l(y_atoms, y_bonds)
+            else:
+                y_atoms = l(y_atoms)
+
+        # Aggregate mean and max features across all nodes.
+        y_feats = torch.cat((torch.mean(y_atoms, 1), torch.max(y_atoms, 1)[0]), 1)
+
+        # Fuse features from protein and ligand.
+        h = torch.cat((x, y_feats), 1)
+        out = self.energy_layer(h)
+
+        return out
