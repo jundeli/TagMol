@@ -96,3 +96,111 @@ class PointNetEncoder(nn.Module):
         x = x.view(-1, self.x_dim)
         
         return x, trans, trans_feat
+
+
+class Generator(nn.Module):
+    """Network for generating probabilistic distribution of ligands."""
+
+    def __init__(self, input_dim, conv_dims, ligand_size, dataset):
+        super(Generator, self).__init__()
+        self.ligand_size = ligand_size
+        self.n_atom_types = len(dataset.atom_encoder)
+        self.n_bond_types = len(dataset.bond_encoder)
+
+        layers = []
+        for c0, c1 in zip([input_dim]+conv_dims[:-1], conv_dims):
+            layers.append(nn.Linear(c0, c1))
+            layers.append(nn.BatchNorm1d(c1, 0.8))
+            layers.append(nn.LeakyReLU(0.2, inplace=True))
+        self.layers = nn.Sequential(*layers)
+
+        self.atom_layer = nn.Sequential(
+                          nn.Linear(conv_dims[-1], 2048),
+                          nn.LeakyReLU(0.2, inplace=True),
+                          nn.Linear(2048, self.ligand_size * self.n_atom_types),
+                          nn.Dropout(p=0.5)
+                          )
+        self.bond_layer = nn.Sequential(
+                          nn.Linear(conv_dims[-1], 2048),
+                          nn.LeakyReLU(0.2, inplace=True),
+                          nn.Linear(2048, self.ligand_size * self.ligand_size * self.n_bond_types),
+                          nn.Dropout(p=0.5)
+                          )
+
+    def forward(self, x, z):
+        # Concatenate protein embedding and noise.
+        gen_input = torch.cat((x, z), -1)
+
+        # Generate atoms and bonds.
+        out = self.layers(gen_input)
+        atoms = self.atom_layer(out).view(-1, self.ligand_size, self.n_atom_types)
+        atoms = nn.Softmax(dim=-1)(atoms)
+
+        bonds = self.bond_layer(out).view(-1, self.ligand_size, self.ligand_size, self.n_bond_types)
+        bonds = (bonds + bonds.permute(0, 2, 1, 3)) / 2.0
+        bonds = nn.Softmax(dim=-1)(bonds)
+
+        return atoms, bonds
+
+
+class GATLayer(nn.Module):
+    """Single-head GAT layer for passing messages with dynamical weights."""
+
+    def __init__(self, c_in, c_out, n_relations, alpha=0.2):
+        """
+        Args:
+            c_in - Dimensionality of input features
+            c_out - Dimensionality of output features
+            n_realtions - Number of relation types between atoms
+        """
+        super(GATLayer, self).__init__()
+        self.n_relations = n_relations
+
+        # Tranaform node_feats to c_out dimenional messages.
+        self.projection = nn.Linear(c_in, c_out*n_relations)
+        self.a = nn.Parameter(torch.Tensor(n_relations, 2*c_out))
+        self.leakyrelu = nn.LeakyReLU(alpha)
+
+        # Initialization from the original implementation
+        nn.init.xavier_uniform_(self.projection.weight.data, gain=1.414)
+        nn.init.xavier_uniform_(self.a.data, gain=1.414)
+
+    def forward(self, atoms, bonds):
+        """
+        Args:
+            atoms - One-hot encoded input features of atom nodes. Shape = (B, ligand_size, c_in)
+            bonds - One-hot encoded adjacency matrix including self-connections.
+                    Shape = (B, ligand_size, ligand_size)
+        """
+        bs, n_nodes = atoms.size(0), atoms.size(1)
+        node_feats = self.projection(atoms)
+        node_feats = node_feats.view(bs, n_nodes, self.n_relations, -1)
+
+        # Calculate the attention logits for evey bond in the ligand.
+        # Create a tensor of [W_r*h_i||W_r*h_j] with i and j being the indices of all bonds
+        edges = bonds.nonzero(as_tuple=False) # shape=(b, n_nodes, n_nodes, r)
+        node_feats_flat = node_feats.view(bs * n_nodes, self.n_relations, -1)
+        edge_indices_row = edges[:,0] * n_nodes + edges[:,1]
+        edge_indices_col = edges[:,0] * n_nodes + edges[:,2]
+        a_input = torch.cat([
+            torch.index_select(input=node_feats_flat, index=edge_indices_row, dim=0),
+            torch.index_select(input=node_feats_flat, index=edge_indices_col, dim=0)
+        ], dim=-1) # return concatenated node_feats indiced by i and j. shape = (n_nodes*n_nodes, r, 2*c_out)
+
+        # Calculate attention logit alpha(i, j) for each relation.
+        attn_logits = torch.einsum('brc,rc->br', a_input, self.a) # shape=(n_nodes*n_nodes, r)
+        attn_logits = self.leakyrelu(attn_logits)
+
+        # Create attention matrix according to relation types.
+        attn_matrix = attn_logits.new_zeros(bonds.shape).fill_(-9e15) # shape=(b, n_nodes, n_nodes, r)
+        attn_matrix[bonds==1] = torch.gather(attn_logits, 1, edges[:, -1].view(-1, 1)).view(-1)
+
+        # Calculate softmax across bonds with all types.
+        attn_matrix = attn_matrix.view(bs, n_nodes, -1)
+        attn_probs = F.softmax(attn_matrix, dim=2).view(bs, n_nodes, n_nodes, self.n_relations)
+
+        # Sum over neighbors with all relations.
+        node_feats = torch.einsum('bijr, bjrc->bic', attn_probs, node_feats)
+
+        return node_feats
+
