@@ -5,7 +5,7 @@
 # Date: Aug 1, 2022
 ###################################################################
 
-import os, time
+import os
 import argparse
 from tqdm import tqdm
 import numpy as np
@@ -13,6 +13,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
+import torch.autograd as autograd
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 import pickle
@@ -20,6 +21,7 @@ from rdkit import Chem
 from dataloader import PDBbindPLDataset, Normalize, RandomRotateJitter, ToTensor
 from model import PointNetEncoder, Generator, Discriminator, EnergyModel, RewardModel
 import itertools
+from utils import *
 
 
 # --------------------------
@@ -37,9 +39,20 @@ conv_dims      = [1024, 2048, 2048, 1024]
 node_dim       = 64
 n_atom_types   = 7
 n_bond_types   = 5
+
 dataset        = 'tiny'
 n_critic       = 5
+lambda_gp      = 10
+alpha_l2       = 0.1
 save_step      = 100
+
+atom_decoder = {0: 0, 1: 6, 2: 7, 3: 8, 4: 9, 5: 16, 6:17}
+bond_decoder = {0: Chem.rdchem.BondType.ZERO,
+                1: Chem.rdchem.BondType.SINGLE,
+                2: Chem.rdchem.BondType.DOUBLE,
+                3: Chem.rdchem.BondType.TRIPLE,
+                4: Chem.rdchem.BondType.AROMATIC
+                }
 
 name           = f"model/tagmol"
 log_dir        = f"{name}"
@@ -139,8 +152,45 @@ def main():
             f_atoms = F.gumbel_softmax(f_atoms, tau=1, hard=True)
             f_bonds = F.gumbel_softmax(f_bonds, tau=1, hard=True)
 
+            # Validity for real and fake samples.
             r_validity = discriminator(r_atoms, r_bonds)
             f_validity = discriminator(f_atoms, f_bonds)
 
-            # Gradient penalty
-            gradient_penalty = compute_gradient_penalty(discriminator, real_imgs.data, fake_imgs.data)
+            # Calculate adient penalty.
+            gradient_penalty = compute_gradient_penalty(discriminator, r_atoms, r_bonds, f_atoms, f_bonds)
+
+            # Adversarial loss
+            loss_D = -torch.mean(r_validity) + torch.mean(f_validity) + lambda_gp * gradient_penalty
+
+            loss_D.backward()
+            opt_disc.step()
+
+        # Train other networks every n_critic steps
+        if (batch+1) % n_critic == 0:
+            
+            # -------------------
+            #  Train Generator
+            # -------------------
+            opt_enc_gen.zero_grad()
+
+            z = Variable(Tensor(np.random.normal(0, 1, (batch_size, z_dim))))
+            f_atoms, f_bonds = generator(x, z)
+            # Hard categorical sampling fake ligands from probabilistic distribution.
+            f_atoms = F.gumbel_softmax(f_atoms, tau=1, hard=True)
+            f_bonds = F.gumbel_softmax(f_bonds, tau=1, hard=True)
+
+            # Validity for fake samples.
+            f_validity = discriminator(f_atoms, f_bonds)
+            loss_G_fake = - torch.mean(f_validity)
+
+            # Energies for real and fake samples.
+            r_out = energy_model(x, r_atoms, r_bonds)
+            f_out = energy_model(x, f_atoms, f_bonds)
+            loss_E = r_out.mean() - f_out.mean() + alpha_l2 * (r_out ** 2 + f_out ** 2).mean()
+
+            # Properties for real and fake ligands.
+            r_pred_properties = reward_model(r_atoms, r_bonds)
+            f_pred_properties = reward_model(f_atoms, f_bonds)
+
+
+
