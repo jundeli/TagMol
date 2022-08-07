@@ -101,11 +101,11 @@ class PointNetEncoder(nn.Module):
 class Generator(nn.Module):
     """Network for generating probabilistic distribution of ligands."""
 
-    def __init__(self, input_dim, conv_dims, ligand_size, dataset):
+    def __init__(self, input_dim, conv_dims, ligand_size, ligand_specs):
         super(Generator, self).__init__()
         self.ligand_size = ligand_size
-        self.n_atom_types = len(dataset.atom_encoder)
-        self.n_bond_types = len(dataset.bond_encoder)
+        self.n_atom_types = ligand_specs[0]
+        self.n_bond_types = ligand_specs[1]
 
         layers = []
         for c0, c1 in zip([input_dim]+conv_dims[:-1], conv_dims):
@@ -146,7 +146,7 @@ class Generator(nn.Module):
 class GATLayer(nn.Module):
     """Single-head GAT layer for passing messages with dynamical weights."""
 
-    def __init__(self, c_in, c_out, n_relations, alpha=0.2):
+    def __init__(self, c_in, c_out, n_relations):
         """
         Args:
             c_in - Dimensionality of input features
@@ -159,7 +159,6 @@ class GATLayer(nn.Module):
         # Tranaform node_feats to c_out dimenional messages.
         self.projection = nn.Linear(c_in, c_out*n_relations)
         self.a = nn.Parameter(torch.Tensor(n_relations, 2*c_out))
-        self.leakyrelu = nn.LeakyReLU(alpha)
 
         # Initialization from the original implementation
         nn.init.xavier_uniform_(self.projection.weight.data, gain=1.414)
@@ -189,7 +188,7 @@ class GATLayer(nn.Module):
 
         # Calculate attention logit alpha(i, j) for each relation.
         attn_logits = torch.einsum('brc,rc->br', a_input, self.a) # shape=(n_nodes*n_nodes, r)
-        attn_logits = self.leakyrelu(attn_logits)
+        attn_logits = nn.LeakyReLU(0.2)(attn_logits)
 
         # Create attention matrix according to relation types.
         attn_matrix = attn_logits.new_zeros(bonds.shape).fill_(-9e15) # shape=(b, n_nodes, n_nodes, r)
@@ -371,4 +370,3 @@ class RewardModel(nn.Module):
 
         return properties
 
-        
