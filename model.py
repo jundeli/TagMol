@@ -54,22 +54,20 @@ class PointNetEncoder(nn.Module):
         super(PointNetEncoder, self).__init__()
         self.stn = STN(k=3)
         self.x_dim = x_dim
-        self.channel = channel
-        self.feature_transform = feature_transform
 
-        self.conv1 = torch.nn.Conv1d(self.channel, 64, 1)
+        self.conv1 = torch.nn.Conv1d(channel, 64, 1)
         self.conv2 = torch.nn.Conv1d(64, 128, 1)
-        self.conv3 = torch.nn.Conv1d(128, self.x_dim, 1)
+        self.conv3 = torch.nn.Conv1d(128, x_dim, 1)
         self.bn1 = nn.BatchNorm1d(64)
         self.bn2 = nn.BatchNorm1d(128)
-        self.bn3 = nn.BatchNorm1d(self.x_dim)
-        
+        self.bn3 = nn.BatchNorm1d(x_dim)
+        self.feature_transform = feature_transform
         if self.feature_transform:
             self.fstn = STN(k=64)
 
     def forward(self, x):
         B, D, N = x.size()
-        trans = self.stn(x[:,:3,:]) # k=3 only
+        trans = self.stn(x[:,:3,:]) # channel=3 only
         x = x.transpose(2, 1)
         if D > 3:
             feature = x[:, :, 3:]
@@ -86,8 +84,6 @@ class PointNetEncoder(nn.Module):
             x = x.transpose(2, 1)
             x = torch.bmm(x, trans_feat)
             x = x.transpose(2, 1)
-        else:
-            trans_feat = None
         
         x = F.relu(self.bn2(self.conv2(x))) # shape=(B, 128, N)
         x = self.bn3(self.conv3(x)) # shape=(B, x_dim, N)
@@ -95,20 +91,21 @@ class PointNetEncoder(nn.Module):
         x = torch.max(x, 2, keepdim=True)[0] # shape=(B, x_dim)
         x = x.view(-1, self.x_dim)
         
-        return x, trans, trans_feat
+        return x
 
 
 class Generator(nn.Module):
     """Network for generating probabilistic distribution of ligands."""
 
-    def __init__(self, input_dim, conv_dims, ligand_size, ligand_specs):
+    def __init__(self, x_dim, z_dim, conv_dims, ligand_size, n_atom_types, n_bond_types):
         super(Generator, self).__init__()
+
+        self.n_atom_types = n_atom_types
+        self.n_bond_types = n_bond_types
         self.ligand_size = ligand_size
-        self.n_atom_types = ligand_specs[0]
-        self.n_bond_types = ligand_specs[1]
 
         layers = []
-        for c0, c1 in zip([input_dim]+conv_dims[:-1], conv_dims):
+        for c0, c1 in zip([x_dim+z_dim]+conv_dims[:-1], conv_dims):
             layers.append(nn.Linear(c0, c1))
             layers.append(nn.BatchNorm1d(c1, 0.8))
             layers.append(nn.LeakyReLU(0.2, inplace=True))
@@ -118,13 +115,13 @@ class Generator(nn.Module):
                           nn.Linear(conv_dims[-1], 2048),
                           nn.LeakyReLU(0.2, inplace=True),
                           nn.Linear(2048, self.ligand_size * self.n_atom_types),
-                          nn.Dropout(p=0.5)
+                          nn.Dropout(p=0.2)
                           )
         self.bond_layer = nn.Sequential(
                           nn.Linear(conv_dims[-1], 2048),
                           nn.LeakyReLU(0.2, inplace=True),
                           nn.Linear(2048, self.ligand_size * self.ligand_size * self.n_bond_types),
-                          nn.Dropout(p=0.5)
+                          nn.Dropout(p=0.2)
                           )
 
     def forward(self, x, z):
@@ -239,12 +236,13 @@ class Discriminator(nn.Module):
                                     nn.Linear(c_out, 1)
                                 )
 
-    def forward(self, x, adj):
+    def forward(self, ligand):
         """
         Args:
             x - Input features of one-hot encoded atom vector
             adj - Ligand structure features of one-hot encoded bond adjacency matrix
         """
+        x, adj = ligand
         for l in self.layers:
             if isinstance(l, GATLayer):
                 x= l(x, adj)
@@ -253,9 +251,9 @@ class Discriminator(nn.Module):
 
         # Aggregate mean and max features across all nodes.
         h = torch.cat((torch.mean(x, 1), torch.max(x, 1)[0]), 1)
-        x = self.validity_layer(h)
+        out = self.validity_layer(h)
 
-        return x
+        return out
 
 
 class EnergyModel(nn.Module):

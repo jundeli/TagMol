@@ -8,6 +8,9 @@ from rdkit.Chem.rdmolfiles import MolFromMol2File
 from rdkit.Chem.rdmolops import GetAdjacencyMatrix
 
 
+cuda = True if torch.cuda.is_available() else False
+Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
+
 class Normalize(object):
     """Normalize the protein atom points."""
     
@@ -25,6 +28,14 @@ class Normalize(object):
 class RandomRotateJitter(object):
     """Apply random rotation and jitter for data augmentation."""
 
+    def __init__(self, sigma):
+        """
+        Args:
+            sigma - Standard deviation of noise perturbation
+        """
+        self.sigma = sigma
+        self.clip = 0.05
+
     def __call__(self, sample):
         protein, ligand = sample['protein'], sample['ligand']
 
@@ -33,7 +44,7 @@ class RandomRotateJitter(object):
         protein[:,[0,2]] = protein[:,[0,2]].dot(rotation_matrix) # random rotation along axis=1
 
         n_nonzero = np.count_nonzero(protein[:, 3])
-        protein[:n_nonzero, :3] += np.random.normal(0, 0.02, size=(n_nonzero, 3)) # random jitter
+        protein[:n_nonzero, :3] += np.clip(np.random.normal(0, self.sigma, size=(n_nonzero, 3)), -self.clip, self.clip) # random jitter
 
         return {'protein': protein, 'ligand': ligand}
 
@@ -44,8 +55,8 @@ class ToTensor(object):
     def __call__(self, sample):
         protein, (atoms, bonds) = sample['protein'], sample['ligand']
         
-        return {'protein': torch.from_numpy(protein),
-                'ligand': (torch.from_numpy(atoms), torch.from_numpy(bonds))}
+        return {'protein': torch.from_numpy(protein.astype(np.float32)).type(Tensor),
+                'ligand': (torch.from_numpy(atoms.astype(np.float32)).type(Tensor), torch.from_numpy(bonds.astype(np.float32)).type(Tensor))}
 
                 
 class PDBbindPLDataset(Dataset):
@@ -83,7 +94,10 @@ class PDBbindPLDataset(Dataset):
         ligand = MolFromMol2File(os.path.join(self.root_dir, f'{pid}/{pid}_ligand.mol2'))
 
         # Calculate ligand centroid and rank protein points by distance.
-        l_centroid = np.mean(ligand.GetConformer().GetPositions(), 0)
+        try:
+            l_centroid = np.mean(ligand.GetConformer().GetPositions(), 0)
+        except:
+            assert False, f'bad pid {pid}'
         protein = np.asarray(sorted(protein, key=lambda x: np.linalg.norm(x[:-1] - l_centroid)))
         
         # Pad null points or select self.n_points atoms closest to l_centriod.
@@ -135,7 +149,7 @@ if __name__ == '__main__':
                                         train=True,
                                         transform=transforms.Compose([
                                             Normalize(),
-                                            RandomRotateJitter(),
+                                            RandomRotateJitter(sigma=0.15),
                                             ToTensor()
                                         ]))
 

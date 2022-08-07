@@ -12,6 +12,8 @@ from rdkit.Chem import Crippen
 import pickle
 import gzip
 
+import warnings
+warnings.filterwarnings("ignore")
 
 cuda = True if torch.cuda.is_available() else False
 Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
@@ -152,7 +154,6 @@ def matrices2mol(node_labels, edge_labels):
     for start, end in zip(*np.nonzero(edge_labels)):
         if start < end:
             mol.AddBond(int(start), int(end), bond_decoder[edge_labels[start, end]])
-
     try:
         Chem.SanitizeMol(mol)
     except:
@@ -193,12 +194,12 @@ def compute_gradient_penalty(discriminator, r_atoms, r_bonds, f_atoms, f_bonds):
 rdkit = MolecularMetrics()
 def reward(mols):
     """Calaulate property scores of QED, logP, and SAS."""
-    validity = rdkit.valid_scores(mols)
+    # validity = rdkit.valid_scores(mols)
     logp = rdkit.water_octanol_partition_coefficient_scores(mols, norm=True)
     sas = rdkit.synthetic_accessibility_score_scores(mols, norm=True)
     qed = rdkit.quantitative_estimation_druglikeness_scores(mols, norm=True)
 
-    properties = np.array([logp, sas, qed])
+    properties = np.stack((logp, sas, qed), 1)
     return properties
 
 def compute_rdkit_property(r_atoms, r_bonds, f_atoms, f_bonds):
@@ -214,8 +215,8 @@ def compute_rdkit_property(r_atoms, r_bonds, f_atoms, f_bonds):
     f_mols = [matrices2mol(n_.data.cpu().numpy(), e_.data.cpu().numpy())
                                         for n_, e_ in zip(f_nodes, f_edges)]
 
-    r_properties = reward(r_mols)
-    f_properties = reward(f_mols)
+    r_properties = torch.from_numpy(reward(r_mols)).type(Tensor)
+    f_properties = torch.from_numpy(reward(f_mols)).type(Tensor)
 
     return r_properties, f_properties
 
