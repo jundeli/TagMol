@@ -166,7 +166,7 @@ class GATLayer(nn.Module):
         Args:
             atoms - One-hot encoded input features of atom nodes. Shape = (B, ligand_size, c_in)
             bonds - One-hot encoded adjacency matrix including self-connections.
-                    Shape = (B, ligand_size, ligand_size)
+                    Shape = (B, ligand_size, ligand_size, n_bond_types)
         """
         bs, n_nodes = atoms.size(0), atoms.size(1)
         node_feats = self.projection(atoms)
@@ -201,32 +201,68 @@ class GATLayer(nn.Module):
         return node_feats
 
 
-class Discriminator(nn.Module):
-    """Discriminator with GATLayer for evaluating EM distance btw real and fake ligands."""
+class GCNLayer(nn.Module):
+    """GCN layer for passing messages."""
 
-    def __init__(self, c_in, c_out, c_hidden=None, n_relations=5, n_layers=3):
+    def __init__(self, c_in, c_out, n_relations):
+        """
+        Args:
+            c_in - Dimensionality of input features
+            c_out - Dimensionality of output features
+            n_realtions - Number of relation types between atoms
+        """
+        super(GCNLayer, self).__init__()
+        self.n_relations = n_relations
+
+        # Tranaform node_feats to c_out dimenional messages.
+        self.projection = nn.Linear(c_in, c_out*n_relations)
+        nn.init.xavier_uniform_(self.projection.weight.data, gain=1.414)
+
+    def forward(self, atoms, bonds):
+        """
+        Args:
+            atoms - One-hot encoded input features of atom nodes. Shape = (B, ligand_size, c_in)
+            bonds - One-hot encoded adjacency matrix including self-connections.
+                    Shape = (B, ligand_size, ligand_size, n_bond_types)
+        """
+        bs, n_nodes = atoms.size(0), atoms.size(1)
+        node_feats = self.projection(atoms)
+        node_feats = node_feats.view(bs, n_nodes, self.n_relations, -1)
+
+        # Sum over neighbors with all relations.
+        node_feats = torch.einsum('bijr, bjrc->bic', (bonds, node_feats))
+        
+        return node_feats
+
+
+class Discriminator(nn.Module):
+    """Discriminator with GNN layer for evaluating EM distance btw real and fake ligands."""
+
+    def __init__(self, c_in, c_out, c_hidden=None, layer_name='GCN', n_relations=5, n_layers=3):
         """
         Args:
             c_in - Dimension of input features
             c_out - Dimension of output features
             c_hidden - Dimension of hidden features
+            layer_name - String of graph layer to use ("GCN", "GAT")
             n_relations - Number of bond relations between atoms
-            n_layers - Number of GAT graph layers
+            n_layers - Number of GNN graph layers
         """
         super(Discriminator, self).__init__()
         c_hidden = c_hidden if c_hidden else c_out
+        gnn_layer = GATLayer if layer_name == 'GAT' else GCNLayer
 
         layers = []
         in_channels, out_channels = c_in, c_hidden
         for _ in range(n_layers-1):
             layers += [
-                GATLayer(in_channels, out_channels, n_relations),
+                gnn_layer(in_channels, out_channels, n_relations),
                 nn.LeakyReLU(0.2, inplace=True),
                 nn.Dropout(0.2)
             ]
             in_channels = c_hidden
 
-        layers.append(GATLayer(in_channels, c_out, n_relations))
+        layers.append(gnn_layer(in_channels, c_out, n_relations))
         self.layers = nn.ModuleList(layers)
 
         self.validity_layer = nn.Sequential(
@@ -244,7 +280,7 @@ class Discriminator(nn.Module):
         """
         x, adj = ligand
         for l in self.layers:
-            if isinstance(l, GATLayer):
+            if isinstance(l, (GATLayer, GCNLayer)):
                 x= l(x, adj)
             else:
                 x = l(x)
