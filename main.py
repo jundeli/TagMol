@@ -23,6 +23,8 @@ from dataloader import PDBbindPLDataset, Normalize, RandomRotateJitter, ToTensor
 from model import PointNetEncoder, Generator, Discriminator, EnergyModel, RewardModel
 import itertools
 from utils import *
+from frechetdist import frdist
+import csv
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -31,15 +33,15 @@ warnings.filterwarnings("ignore")
 # --------------------------
 # Hyperparameters
 # --------------------------
-lr             = 1e-3
+lr             = 1e-4
 batch_size     = 16
-max_epoch      = 200
+max_epoch      = 5000
 num_workers    = 2
-ligand_size    = 32
-x_dim          = 512
-z_dim          = 128
+ligand_size    = 14
+x_dim          = 32
+z_dim          = 64
 n_pc_points    = 4096
-conv_dims      = [1024, 2048, 2048, 1024]
+conv_dims      = [64, 256, 1024]
 node_dim       = 64
 n_atom_types   = 7
 n_bond_types   = 5
@@ -47,20 +49,19 @@ n_bond_types   = 5
 dataset        = 'refined'
 n_critic       = 5
 lambda_gp      = 10
-alpha_l2       = 0.1
-beta_le        = 1
-gamma_lr       = 1
-save_step      = 40
+alpha_l2       = 1e-3
+beta_le        = 1e-5
+gamma_lr       = 1e-4
+save_step      = 100
 
 atom_decoder = {0: 0, 1: 6, 2: 7, 3: 8, 4: 9, 5: 16, 6:17}
 bond_decoder = {0: Chem.rdchem.BondType.ZERO,
                 1: Chem.rdchem.BondType.SINGLE,
                 2: Chem.rdchem.BondType.DOUBLE,
                 3: Chem.rdchem.BondType.TRIPLE,
-                4: Chem.rdchem.BondType.AROMATIC
-                }
+                4: Chem.rdchem.BondType.AROMATIC}
 
-name           = f"model/tagmol"
+name           = f"model/tagmol-ligsize/{ligand_size}"
 log_dir        = f"{name}"
 models_dir     = f"{name}/{dataset}_saved_models"
 device         = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -104,10 +105,10 @@ discriminator = Discriminator(c_in=n_atom_types, c_out=node_dim, c_hidden=32, n_
 energy_model  = EnergyModel(x_dim, c_in=n_atom_types, c_out=node_dim, n_relations=n_bond_types, n_layers=3)
 reward_model  = RewardModel(c_in=n_atom_types, c_out=node_dim, c_hidden=32, n_relations=n_bond_types, n_layers=3)
 
-opt_enc_gen   = torch.optim.Adam(itertools.chain(encoder.parameters(), generator.parameters()), lr, (0.0, 0.9))
-opt_disc      = torch.optim.Adam(discriminator.parameters(), lr, (0.0, 0.9))
-opt_ene       = torch.optim.Adam(energy_model.parameters(), lr, (0.0, 0.9))
-opt_rew       = torch.optim.Adam(reward_model.parameters(), lr, (0.0, 0.9))
+opt_enc_gen   = torch.optim.Adam(itertools.chain(encoder.parameters(), generator.parameters()), lr, (0.9, 0.999))
+opt_disc      = torch.optim.Adam(discriminator.parameters(), lr, (0.9, 0.999))
+opt_ene       = torch.optim.Adam(energy_model.parameters(), lr, (0.9, 0.999))
+opt_rew       = torch.optim.Adam(reward_model.parameters(), lr, (0.9, 0.999))
 
 if cuda:
     encoder.cuda()
@@ -139,10 +140,11 @@ def main():
     print('Start traning...')
 
     for epoch in tqdm(range(max_epoch),  desc='total progress'):
-        losses_D = []
-        losses_G = []
-        losses_E = []
-        losses_R = []
+        losses_D  = []
+        losses_G  = []
+        losses_E  = []
+        losses_R  = []
+        fd_scores = []
         cur_time = time.strftime("%D %H:%M:%S", time.localtime())
         epoch_log = f"{cur_time}\tepoch {epoch+1}\t"
 
@@ -181,7 +183,7 @@ def main():
             loss_D.backward()
             opt_disc.step()
 
-            batch_log += f"loss_d: {-torch.mean(r_validity).item():.2f}\t{torch.mean(f_validity).item():.2f}\t{torch.mean(f_validity).item():.2f}\n"
+            batch_log += f"loss_d: {-torch.mean(r_validity).item():.2f}\t{torch.mean(f_validity).item():.2f}\t{lambda_gp * gradient_penalty.item():.2f}\n"
 
             # Train other networks every n_critic steps
             if (batch+1) % n_critic == 0:
@@ -217,11 +219,39 @@ def main():
                 loss_R = torch.mean((r_pred_properties - r_properties)**2 + \
                                                 (f_pred_properties - f_properties)**2)
 
-                loss_G = loss_G_fake + loss_E + loss_R
+                loss_G = loss_G_fake + beta_le*loss_E + gamma_lr*loss_R
                 losses_G.append(loss_G.item())
 
                 loss_G.backward()
                 opt_enc_gen.step()
+
+
+                r_dist =[list(r_atoms[i].reshape(-1).cpu().detach().numpy()) + list(r_bonds[i].reshape(-1).cpu().detach().numpy())  for i in range(batch_size)] #list(x[i]) + 
+                f_dist =[list(f_atoms[i].reshape(-1).cpu().detach().numpy()) + list(f_bonds[i].reshape(-1).cpu().detach().numpy())  for i in range(batch_size)] #list(nodes_hard[i]) + 
+                fd_bond_atom = frdist(r_dist, f_dist)
+                fd_scores.append(fd_bond_atom)
+
+                # Saving model checkpoint with lowest FD score
+                if "fd_bond_atom_min" not in locals():
+                    fd_bond_atom_min = 30
+                if fd_bond_atom_min > fd_bond_atom:
+                    if "lowest_ind" not in locals():
+                        lowest_ind = 0
+
+                    if lowest_ind:
+                        for model in [encoder, generator, discriminator]: #, energy_model, reward_model
+                            os.remove(os.path.join(models_dir, f'{ligand_size}-{lowest_ind}-{str(type(model)).split(".")[-1][:-2]}.ckpt'))
+
+                    lowest_ind = epoch+1
+                    fd_bond_atom_min = fd_bond_atom
+
+                    for model in [encoder, generator, discriminator]: #, energy_model, reward_model
+                        path = os.path.join(models_dir, f'{ligand_size}-{epoch+1}-{str(type(model)).split(".")[-1][:-2]}.ckpt')
+                        torch.save(model.state_dict(), path)
+                        
+                    with open(os.path.join(models_dir, 'lowest_indices.csv'), 'a') as file:
+                        writer = csv.writer(file)
+                        writer.writerow([epoch+1] + [fd_bond_atom])
 
                 batch_log += f"loss_g: {loss_G_fake.item():.2f}\t{loss_E.item():.2f}\t{loss_R.item():.2f}\n"
 
@@ -277,7 +307,7 @@ def main():
                 batch_log += f"properties: {torch.mean(r_properties, 0)[0].item():.2f}\t{torch.mean(r_properties, 0)[1].item():.2f}\t{torch.mean(r_properties, 0)[2].item():.2f}\t{torch.mean(f_properties, 0)[0].item():.2f}\t{torch.mean(f_properties, 0)[1].item():.2f}\t{torch.mean(f_properties, 0)[2].item():.2f}\n"
                 print_and_save(batch_log, f"{log_dir}/batch-log.txt")
 
-        epoch_log += f"loss_d:{np.mean(losses_D):.4f}\t loss_g:{np.mean(losses_G):.4f}\t loss_e:{np.mean(losses_E):.4f}\t loss_r:{np.mean(losses_R):.4f}\t"
+        epoch_log += f"loss_d:{np.mean(losses_D):.4f}\t loss_g:{np.mean(losses_G):.4f}\t loss_e:{np.mean(losses_E):.4f}\t loss_r:{np.mean(losses_R):.4f}\t fd:{np.mean(fd_scores):.4f}\t"
         print_and_save(epoch_log, f"{log_dir}/epoch-log.txt")
 
         # Save model checkpoints.
