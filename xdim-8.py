@@ -19,6 +19,8 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 import pickle
 from rdkit import Chem
+from frechetdist import frdist
+import csv
 
 import sys
 current = os.path.dirname(os.path.realpath(__file__))
@@ -38,7 +40,7 @@ warnings.filterwarnings("ignore")
 # --------------------------
 lr             = 1e-4
 batch_size     = 16
-max_epoch      = 3000
+max_epoch      = 5000
 num_workers    = 2
 ligand_size    = 14
 x_dim          = 8
@@ -138,12 +140,13 @@ energy_model.apply(weights_init_normal)
 reward_model.apply(weights_init_normal)
 
 
-start_epoch = 400
-for model in [encoder, generator, discriminator]: #, energy_model, reward_model
-    path = os.path.join(models_dir, f'{ligand_size}-{start_epoch}-{str(type(model)).split(".")[-1][:-2]}.ckpt')
-    model.load_state_dict(torch.load(path))
-    model.eval()
-print(f'Loaded model checkpoints from {models_dir}...')
+start_epoch = 0
+if start_epoch:
+    for model in [encoder, generator, discriminator]: #, energy_model, reward_model
+        path = os.path.join(models_dir, f'{ligand_size}-{start_epoch}-{str(type(model)).split(".")[-1][:-2]}.ckpt')
+        model.load_state_dict(torch.load(path))
+        model.eval()
+    print(f'Loaded model checkpoints from {models_dir}...')
 
 
 def main():
@@ -151,10 +154,11 @@ def main():
     print('Start traning...')
 
     for epoch in tqdm(range(start_epoch, max_epoch),  desc='total progress'):
-        losses_D = []
-        losses_G = []
-        losses_E = []
-        losses_R = []
+        losses_D  = []
+        losses_G  = []
+        losses_E  = []
+        losses_R  = []
+        fd_scores = []
         cur_time = time.strftime("%D %H:%M:%S", time.localtime())
         epoch_log = f"{cur_time}\tepoch {epoch+1}\t"
 
@@ -234,6 +238,34 @@ def main():
 
                 loss_G.backward()
                 opt_enc_gen.step()
+
+
+                r_dist =[list(r_atoms[i].reshape(-1).cpu().detach().numpy()) + list(r_bonds[i].reshape(-1).cpu().detach().numpy())  for i in range(batch_size)] #list(x[i]) + 
+                f_dist =[list(f_atoms[i].reshape(-1).cpu().detach().numpy()) + list(f_bonds[i].reshape(-1).cpu().detach().numpy())  for i in range(batch_size)] #list(nodes_hard[i]) + 
+                fd_bond_atom = frdist(r_dist, f_dist)
+                fd_scores.append(fd_bond_atom)
+
+                # Saving model checkpoint with lowest FD score
+                if "fd_bond_atom_min" not in locals():
+                    fd_bond_atom_min = 30
+                if fd_bond_atom_min > fd_bond_atom:
+                    if "lowest_ind" not in locals():
+                        lowest_ind = 0
+
+                    if lowest_ind:
+                        for model in [encoder, generator, discriminator]: #, energy_model, reward_model
+                            os.remove(os.path.join(models_dir, f'{ligand_size}-{lowest_ind}-{str(type(model)).split(".")[-1][:-2]}.ckpt'))
+
+                    lowest_ind = epoch+1
+                    fd_bond_atom_min = fd_bond_atom
+
+                    for model in [encoder, generator, discriminator]: #, energy_model, reward_model
+                        path = os.path.join(models_dir, f'{ligand_size}-{epoch+1}-{str(type(model)).split(".")[-1][:-2]}.ckpt')
+                        torch.save(model.state_dict(), path)
+                        
+                    with open(os.path.join(models_dir, 'lowest_indices.csv'), 'a') as file:
+                        writer = csv.writer(file)
+                        writer.writerow([epoch+1] + [fd_bond_atom])
 
                 batch_log += f"loss_g: {loss_G_fake.item():.2f}\n" #\t{loss_E.item():.2f}\t{loss_R.item():.2f}
 
