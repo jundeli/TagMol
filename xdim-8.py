@@ -322,7 +322,7 @@ def main():
 
 
                 print_and_save(batch_log, f"{log_dir}/batch-log.txt")
-        epoch_log += f"loss_d:{np.mean(losses_D):.4f}\t loss_g:{np.mean(losses_G):.4f}\t"
+        epoch_log += f"loss_d:{np.mean(losses_D):.4f}\t loss_g:{np.mean(losses_G):.4f}\t fd:{np.mean(fd_scores):.4f}\t"
                         #loss_e:{np.mean(losses_E):.4f}\t loss_r:{np.mean(losses_R):.4f}\t
         print_and_save(epoch_log, f"{log_dir}/epoch-log.txt")
 
