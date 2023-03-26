@@ -21,7 +21,7 @@ from torchvision import transforms
 import pickle
 from rdkit import Chem
 from dataloader import PDBbindPLDataset, Normalize, RandomRotateJitter, ToTensor
-from model import PointNetEncoder, Generator, Discriminator, EnergyModel, RewardModel
+from model import PointNetEncoder, Generator, Discriminator, m_Discriminator
 import itertools
 from utils import *
 from frechetdist import frdist
@@ -41,10 +41,12 @@ ligand_size    = 14
 x_dim          = 0 # standard GAN
 z_dim          = 16
 n_pc_points    = 4096
-conv_dims      = [64, 256, 1024]
+g_conv_dims    = [64, 256, 1024]
+d_conv_dim     = [[128, 64], 128, [128, 64]]
 node_dim       = 64
 n_atom_types   = 7
 n_bond_types   = 5
+dropout        = 0.2
 
 dataset        = 'refined'
 n_critic       = 5
@@ -81,8 +83,9 @@ train_loader = DataLoader(train_dataset, batch_size=batch_size,
                         shuffle=True, drop_last=False)
 
 # Initialize models and make optimizers.
-generator     = Generator(x_dim, z_dim, conv_dims, ligand_size, n_atom_types, n_bond_types)
-discriminator = Discriminator(c_in=n_atom_types, c_out=node_dim, c_hidden=32, n_relations=n_bond_types, n_layers=3)  
+generator     = Generator(x_dim, z_dim, g_conv_dims, ligand_size, n_atom_types, n_bond_types)
+discriminator = m_Discriminator(d_conv_dim, n_atom_types, n_bond_types, dropout)
+# discriminator = Discriminator(c_in=n_atom_types, c_out=node_dim, c_hidden=32, n_relations=n_bond_types, n_layers=3)  
 
 opt_gen       = torch.optim.Adam(generator.parameters(), lr, (0.9, 0.999))
 opt_disc      = torch.optim.Adam(discriminator.parameters(), lr, (0.9, 0.999))
@@ -90,21 +93,6 @@ opt_disc      = torch.optim.Adam(discriminator.parameters(), lr, (0.9, 0.999))
 if cuda:
     generator.cuda()
     discriminator.cuda()
-
-def weights_init_normal(m):
-    classname = m.__class__.__name__
-    if classname.find("Conv") != -1:
-        torch.nn.init.normal_(m.weight.data, 0.0, 0.02)
-    elif classname.find("BatchNorm") != -1:
-        torch.nn.init.normal_(m.weight.data, 1.0, 0.02)
-        torch.nn.init.constant_(m.bias.data, 0.0)
-    elif classname.find("Linear") != -1:
-        torch.nn.init.normal_(m.weight.data, 1.0, 0.02)
-
-# Initialize model weights.
-generator.apply(weights_init_normal)
-discriminator.apply(weights_init_normal)
-
 
 start_epoch = 0
 if start_epoch:
@@ -145,11 +133,11 @@ def main():
             f_bonds = F.gumbel_softmax(f_bonds, tau=1, hard=True)
 
             # Validity for real and fake samples.
-            r_validity = discriminator((r_atoms, r_bonds))
-            f_validity = discriminator((f_atoms, f_bonds))
+            r_validity = discriminator(r_bonds, None, r_atoms)
+            f_validity = discriminator(f_bonds, None, f_atoms)
 
             # Calculate adient penalty.
-            gradient_penalty = compute_gradient_penalty(discriminator, r_atoms, r_bonds, f_atoms, f_bonds)
+            gradient_penalty = compute_gradient_penalty(discriminator, r_atoms, r_bonds, f_atoms, f_bonds, True)
 
             # Adversarial loss plus gradient penalty.
             loss_D = -torch.mean(r_validity) + torch.mean(f_validity) + lambda_gp * gradient_penalty
@@ -176,7 +164,7 @@ def main():
                 f_bonds = F.gumbel_softmax(f_bonds, tau=1, hard=True)
 
                 # Validity for fake samples.
-                f_validity = discriminator((f_atoms, f_bonds))
+                f_validity = discriminator(f_bonds, None, f_atoms)
                 loss_G_fake = - torch.mean(f_validity)
 
                 loss_G = loss_G_fake

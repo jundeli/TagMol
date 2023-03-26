@@ -134,11 +134,13 @@ class Generator(nn.Module):
         # Generate atoms and bonds.
         out = self.layers(gen_input)
         atoms = self.atom_layer(out).view(-1, self.ligand_size, self.n_atom_types)
-        atoms = nn.Softmax(dim=-1)(atoms)
+        atoms = nn.Dropout(p=0.)(atoms)
+        # atoms = nn.Softmax(dim=-1)(atoms)
 
         bonds = self.bond_layer(out).view(-1, self.ligand_size, self.ligand_size, self.n_bond_types)
         bonds = (bonds + bonds.permute(0, 2, 1, 3)) / 2.0
-        bonds = nn.Softmax(dim=-1)(bonds)
+        bonds = nn.Dropout(p=0.)(bonds)
+        # bonds = nn.Softmax(dim=-1)(bonds)
 
         return atoms, bonds
 
@@ -407,3 +409,88 @@ class RewardModel(nn.Module):
 
         return properties
 
+class GraphConvolution(nn.Module):
+
+    def __init__(self, in_features, out_feature_list, dropout):
+        super(GraphConvolution, self).__init__()
+        self.in_features = in_features
+        self.out_feature_list = out_feature_list
+
+        self.linear1 = nn.Linear(in_features, out_feature_list[0])
+        self.linear2 = nn.Linear(out_feature_list[0], out_feature_list[1])
+
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, input, adj, activation=None):
+        # input : 16x9x9
+        # adj : 16x4x9x9
+
+        hidden = torch.stack([self.linear1(input) for _ in range(adj.size(1))], 1)
+        hidden = torch.einsum('bijk,bikl->bijl', (adj, hidden))
+        hidden = torch.sum(hidden, 1) + self.linear1(input)
+        hidden = activation(hidden) if activation is not None else hidden
+        hidden = self.dropout(hidden)
+
+        output = torch.stack([self.linear2(hidden) for _ in range(adj.size(1))], 1)
+        output = torch.einsum('bijk,bikl->bijl', (adj, output))
+        output = torch.sum(output, 1) + self.linear2(hidden)
+        output = activation(output) if activation is not None else output
+        output = self.dropout(output)
+
+        return output
+
+class GraphAggregation(nn.Module):
+
+    def __init__(self, in_features, out_features, n_atom_types, dropout):
+        super(GraphAggregation, self).__init__()
+        self.sigmoid_linear = nn.Sequential(nn.Linear(in_features+n_atom_types, out_features),
+                                            nn.Sigmoid())
+        self.tanh_linear = nn.Sequential(nn.Linear(in_features+n_atom_types, out_features),
+                                         nn.Tanh())
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, input, activation):
+        i = self.sigmoid_linear(input)
+        j = self.tanh_linear(input)
+        output = torch.sum(torch.mul(i,j), 1)
+        output = activation(output) if activation is not None\
+                 else output
+        output = self.dropout(output)
+
+        return output
+
+class m_Discriminator(nn.Module):
+    """Discriminator network with PatchGAN."""
+    def __init__(self, conv_dim, n_atom_types, n_bond_types, dropout):
+        super(m_Discriminator, self).__init__()
+
+        graph_conv_dim, aux_dim, linear_dim = conv_dim
+        # discriminator
+        self.gcn_layer = GraphConvolution(n_atom_types, graph_conv_dim, dropout)
+        self.agg_layer = GraphAggregation(graph_conv_dim[-1], aux_dim, n_atom_types, dropout)
+
+        # multi dense layer
+        layers = []
+        for c0, c1 in zip([aux_dim]+linear_dim[:-1], linear_dim):
+            layers.append(nn.Linear(c0,c1))
+            layers.append(nn.Dropout(dropout))
+        self.linear_layer = nn.Sequential(*layers)
+
+        self.output_layer = nn.Linear(linear_dim[-1], 1)
+
+    def forward(self, adj, hidden, node, activatation=None):
+        adj = adj[:,:,:,1:].permute(0,3,1,2)
+        annotations = torch.cat((hidden, node), -1) if hidden is not None else node
+        h = self.gcn_layer(annotations, adj)
+        annotations = torch.cat((h, hidden, node) if hidden is not None\
+                                    else (h, node), -1)
+        h = self.agg_layer(annotations, torch.tanh)
+        h = self.linear_layer(h)
+
+        # Need to implemente batch discriminator #
+        ##########################################
+
+        output = self.output_layer(h)
+        output = activatation(output) if activatation is not None else output
+
+        return output
