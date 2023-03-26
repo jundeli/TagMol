@@ -2,7 +2,7 @@
 # This is an official PyTorch implementation for Target-specific
 # Generation of Molecules (TagMol)
 # Author: Junde Li, The Pennsylvania State University
-# Date: Aug 1, 2022
+# Date: Mar 25, 2023
 ###################################################################
 
 import os
