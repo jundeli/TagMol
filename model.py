@@ -99,7 +99,7 @@ class Generator(nn.Module):
 
     def __init__(self, x_dim, z_dim, conv_dims, ligand_size, n_atom_types, n_bond_types):
         super(Generator, self).__init__()
-
+        self.x_dim = x_dim
         self.n_atom_types = n_atom_types
         self.n_bond_types = n_bond_types
         self.ligand_size = ligand_size
@@ -124,9 +124,12 @@ class Generator(nn.Module):
                           nn.Dropout(p=0.2)
                           )
 
-    def forward(self, x, z):
+    def forward(self, z, x=None):
         # Concatenate protein embedding and noise.
-        gen_input = torch.cat((x, z), -1)
+        if self.x_dim and x:
+            gen_input = torch.cat((x, z), -1)
+        else:
+            gen_input = z
 
         # Generate atoms and bonds.
         out = self.layers(gen_input)
