@@ -162,7 +162,7 @@ def matrices2mol(node_labels, edge_labels):
     return mol
 
 
-def compute_gradient_penalty(discriminator, r_atoms, r_bonds, f_atoms, f_bonds):
+def compute_gradient_penalty(discriminator, r_atoms, r_bonds, f_atoms, f_bonds, mol_d):
     """Calculates the gradient penalty (L2_norm(dy/dx) - 1)**2"""
     # Random weight term for interpolation between real and fake samples
     alpha_atoms = Tensor(np.random.random((r_atoms.size(0), 1, 1)))
@@ -174,7 +174,10 @@ def compute_gradient_penalty(discriminator, r_atoms, r_bonds, f_atoms, f_bonds):
     interp_atoms = F.gumbel_softmax(interp_atoms, tau=1, hard=True)
     interp_bonds = F.gumbel_softmax(interp_bonds, tau=1, hard=True)
 
-    interp_validity = discriminator((interp_atoms, interp_bonds))
+    if mol_d:
+        interp_validity = discriminator(interp_bonds, None, interp_atoms)
+    else:
+        interp_validity = discriminator((interp_atoms, interp_bonds))
     fake = Variable(Tensor(r_atoms.shape[0], 1).fill_(1.0), requires_grad=False)
     # Get gradient w.r.t. interpolates
     gradients = autograd.grad(
