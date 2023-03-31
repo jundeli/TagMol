@@ -126,7 +126,7 @@ class Generator(nn.Module):
 
     def forward(self, z, x=None):
         # Concatenate protein embedding and noise.
-        if self.x_dim and x:
+        if self.x_dim:
             gen_input = torch.cat((x, z), -1)
         else:
             gen_input = z
