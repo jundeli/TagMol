@@ -194,14 +194,14 @@ def main():
                         lowest_ind = 0
 
                     if lowest_ind:
-                        for model in [generator, discriminator]:
+                        for model in [encoder, generator, discriminator]:
                             os.remove(os.path.join(models_dir, \
                                 f'{ligand_size}-{lowest_ind}-{str(type(model)).split(".")[-1][:-2]}.ckpt'))
 
                     lowest_ind = epoch+1
                     fd_bond_atom_min = fd_bond_atom
 
-                    for model in [generator, discriminator]:
+                    for model in [encoder, generator, discriminator]:
                         path = os.path.join(models_dir, \
                             f'{ligand_size}-{epoch+1}-{str(type(model)).split(".")[-1][:-2]}.ckpt')
                         torch.save(model.state_dict(), path)
@@ -218,7 +218,7 @@ def main():
 
         # Save model checkpoints.
         if (epoch+1) % save_step == 0:
-            for model in [generator, discriminator]:
+            for model in [encoder, generator, discriminator]:
                 path = os.path.join(models_dir, f'{ligand_size}-{epoch+1}-{str(type(model)).split(".")[-1][:-2]}.ckpt')
                 torch.save(model.state_dict(), path)
             print(f'Saved model checkpoints into {models_dir}...')
