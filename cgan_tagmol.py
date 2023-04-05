@@ -33,13 +33,13 @@ warnings.filterwarnings("ignore")
 # --------------------------
 # Hyperparameters
 # --------------------------
-lr             = 1e-4
-batch_size     = 32
+lr             = 3e-5
+batch_size     = 64
 max_epoch      = 2000
 num_workers    = 2
 ligand_size    = 14
-x_dim          = 16 # standard GAN
-z_dim          = 16
+x_dim          = 64 # standard GAN
+z_dim          = 8
 n_pc_points    = 4096
 g_conv_dims    = [64, 256, 1024]
 d_conv_dim     = [[128, 64], 128, [128, 64]]
