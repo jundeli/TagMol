@@ -88,7 +88,7 @@ generator     = Generator(x_dim, z_dim, g_conv_dims, ligand_size, n_atom_types, 
 discriminator = m_Discriminator(d_conv_dim, n_atom_types, n_bond_types, dropout)
 # discriminator = Discriminator(c_in=n_atom_types, c_out=node_dim, c_hidden=32, n_relations=n_bond_types, n_layers=3)  
 
-opt_gen       = torch.optim.Adam(generator.parameters(), lr, (0.9, 0.999))
+opt_enc_gen   = torch.optim.Adam(itertools.chain(encoder.parameters(), generator.parameters()), lr, (0.9, 0.999))
 opt_disc      = torch.optim.Adam(discriminator.parameters(), lr, (0.9, 0.999))
 
 if cuda:
@@ -159,7 +159,7 @@ def main():
                 # -------------------------------
                 #  Train Generator and Encoder
                 # -------------------------------
-                opt_gen.zero_grad()
+                opt_enc_gen.zero_grad()
                 
                 if x_dim:
                     x = encoder(protein.transpose(2, 1))
@@ -177,7 +177,7 @@ def main():
                 losses_G.append(loss_G.item())
 
                 loss_G.backward()
-                opt_gen.step()
+                opt_enc_gen.step()
 
                 r_dist =[list(r_atoms[i].reshape(-1).cpu().detach().numpy()) \
                                     + list(r_bonds[i].reshape(-1).cpu().detach().numpy()) for i in range(batch_size)]
