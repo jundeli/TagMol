@@ -27,7 +27,7 @@ This main file was used for running TagMol experiments with GCN and GAT backends
 Below are some generated molecules:
 
 <div style="color:#0000FF" align="center">
-<img src="molecules/generated_molecules.png" width="630"/> 
+<img src="molecules/generated_molecules.png" width="830"/> 
 </div>
 
 ## Citation
