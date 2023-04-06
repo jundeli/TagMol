@@ -22,6 +22,10 @@ For details see [Energy-based Generative Models for Target-specific Drug Discove
 python main.py
 ```
 This main file was used for running TagMol experiments with GCN and GAT backends. The file data_dump.py could be executed first in order to run experiments faster with a preprocessed dataset.
+```
+python cgan_tagmol.py
+```
+This is a simplified cgan version of tagmol exluding the energy network. It supports generating target-specific molecules but not evaluating the relative binding affinity between the protein target and ligand.
 
 
 Below are some generated molecules:
