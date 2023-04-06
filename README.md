@@ -31,7 +31,7 @@ This is a simplified cgan version of tagmol exluding the energy network. It supp
 Below are some generated molecules:
 
 <div style="color:#0000FF" align="center">
-<img src="molecules/generated_molecules.png" width="830"/> 
+<img src="molecules/generated_molecules.png" width="730"/> 
 </div>
 
 ## Citation
