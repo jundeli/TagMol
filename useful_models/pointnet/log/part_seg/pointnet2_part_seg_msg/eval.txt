@@ -1,9 +1,0 @@
-2022-08-01 16:06:01,613 - Model - INFO - PARAMETER ...
-2022-08-01 16:06:01,614 - Model - INFO - Namespace(batch_size=24, gpu='0', log_dir='pointnet2_part_seg_msg', normal=False, num_point=2048, num_votes=3)
-2022-08-01 16:06:01,682 - Model - INFO - The number of test data is: 2874
-2022-08-01 16:07:52,165 - Model - INFO - PARAMETER ...
-2022-08-01 16:07:52,165 - Model - INFO - Namespace(batch_size=24, gpu='0', log_dir='pointnet2_part_seg_msg', normal=False, num_point=2048, num_votes=3)
-2022-08-01 16:07:52,193 - Model - INFO - The number of test data is: 2874
-2022-08-01 16:08:19,854 - Model - INFO - PARAMETER ...
-2022-08-01 16:08:19,854 - Model - INFO - Namespace(batch_size=24, gpu='0', log_dir='pointnet2_part_seg_msg', normal=False, num_point=2048, num_votes=3)
-2022-08-01 16:08:19,912 - Model - INFO - The number of test data is: 2874
