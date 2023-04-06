@@ -1,5 +1,5 @@
 # Energy-based Generative Models for Target-specific Drug Discovery
-Pytorch implementation of Target-specific Generation of Molecules (TagMol). This library refers to the following source code.
+A Pytorch implementation of Target-specific Generation of Molecules (TagMol). This library refers to the following source code.
 * [yongqyu/MolGAN-pytorch](https://github.com/yongqyu/MolGAN-pytorch)
 * [jundeli/quantum-gan]([https://github.com/jundeli/quantum-gan]
 
